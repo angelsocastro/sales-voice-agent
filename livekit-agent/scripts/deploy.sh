@@ -11,7 +11,7 @@
 # El build lo hace LiveKit Cloud a partir del Dockerfile — aquí no se construye
 # ninguna imagen, solo se sube el directorio.
 #
-# Los secretos salen de Doppler, igual que en el monorepo `caudal`:
+# Los secretos salen de Doppler, igual que en otro proyecto propio:
 #   local  →  doppler run -- npm run deploy
 #   CI     →  doppler run --token "$DOPPLER_TOKEN" -- npm run deploy:only
 # El script no sabe nada de Doppler: solo lee del entorno. Así funciona igual
