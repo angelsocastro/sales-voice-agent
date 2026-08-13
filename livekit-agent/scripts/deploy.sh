@@ -36,7 +36,7 @@ set -euo pipefail
 # agente.
 # LIVEKIT_AGENT_NAME sí va: es lo que distingue al agente de dev del de
 # producción a la hora de recibir llamadas (ver comentario en src/main.ts).
-AGENT_SECRET_VARS=(TELNYX_API_KEY ATTIO_API_KEY CARTESIA_ES_VOICE_ID LIVEKIT_AGENT_NAME)
+AGENT_SECRET_VARS=(TELNYX_API_KEY ATTIO_API_KEY CARTESIA_ES_VOICE_ID LIVEKIT_AGENT_NAME SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY)
 
 AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$AGENT_DIR"

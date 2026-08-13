@@ -2,26 +2,16 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { config } from './config.js'
 import { createAttioAdapter } from './crm/attio.js'
-import { getAllTools } from './tools/index.js'
-import { createMcpHandler } from './mcp/handler.js'
 import { reconcileInsights, type InsightsPayload } from './insights/reconcile.js'
 import { verifyTelnyxSignature } from './webhooks/verify.js'
 import { claimPendingCall, createLiveKitInboundHandler, listPendingCalls } from './webhooks/livekit-inbound.js'
 
 async function main() {
   const adapter = await createAttioAdapter(config.ATTIO_API_KEY)
-  const tools = getAllTools(adapter)
-  const handleMcp = createMcpHandler(tools)
 
   const app = new Hono()
 
   app.get('/health', c => c.json({ ok: true }))
-
-  app.post('/', async c => {
-    const body = await c.req.json()
-    const response = await handleMcp(body)
-    return c.json(response)
-  })
 
   app.post('/webhooks/insights', async c => {
     const rawBody = await c.req.text()
