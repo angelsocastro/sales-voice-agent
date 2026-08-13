@@ -1,0 +1,33 @@
+{
+  "name": "outbound-voice-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js start",
+    "dev": "tsx src/main.ts dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:offline": "vitest run tests/session-config.test.ts tests/crm-outcome.test.ts tests/rollout-status.test.ts",
+    "deploy": "npm run build && npm run test:offline && npm run deploy:only",
+    "deploy:only": "bash scripts/deploy.sh"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.5.0",
+    "@livekit/agents-plugin-openai": "^1.5.1",
+    "@livekit/noise-cancellation-node": "^0.1.10",
+    "@livekit/rtc-node": "^0.13.31",
+    "@supabase/supabase-js": "^2.45.0",
+    "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
+    "livekit-server-sdk": "^2.16.0",
+    "openai": "^6.8.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

@@ -1,0 +1,39 @@
+/* Sin Tailwind ni shadcn a propósito — esto es una pantalla de un solo uso
+   para un solo usuario mientras está al teléfono, no un producto. CSS a
+   mano mantiene el árbol de dependencias (y el tiempo de arranque) al
+   mínimo. Ver sdr-console/README.md. */
+
+:root {
+  --bg: #0b0d10;
+  --panel: #14171c;
+  --border: #262b33;
+  --text: #e8eaed;
+  --text-dim: #8b93a1;
+  --accent: #4f8cff;
+  --danger: #e6493f;
+  --live: #34c759;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+main {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}

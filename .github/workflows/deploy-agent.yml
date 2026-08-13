@@ -1,0 +1,221 @@
+name: Deploy — agente de voz a LiveKit
+
+# Dos entornos, mismo patrón que en otro monorepo propio:
+# un job por entorno, cada uno con su token de Doppler, y la rama decide cuál
+# corre. En manual se elige con el input (a diferencia de Convex, donde un
+# dispatch manual sincroniza los dos: aquí un deploy a producción no debería
+# salir de rebote al lanzar uno de dev).
+#
+#   staging → agente de dev   (livekit.dev.toml, DOPPLER_TOKEN_STG)
+#   main    → agente de prod  (livekit.toml,     DOPPLER_TOKEN, con aprobación)
+on:
+  push:
+    branches: [main, staging]
+    paths:
+      - 'livekit-agent/**'
+      - '.github/workflows/deploy-agent.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Entorno al que desplegar
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  deploy-dev:
+    name: Desplegar a LiveKit Cloud (dev)
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    # Sin reviewers: dev es para probar sin fricción. El environment existe solo
+    # para que quede registrado quién desplegó y cuándo.
+    environment: development
+    defaults:
+      run:
+        working-directory: livekit-agent
+    concurrency:
+      group: deploy-agente-livekit-dev
+      cancel-in-progress: false
+    env:
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_STG }}
+      LK_CONFIG: livekit.dev.toml
+      LK_VERSION: ${{ vars.LK_VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # El fichero de config lo genera `lk agent create` en local (auth
+      # interactiva, no scriptable) y va commiteado. Sin él no hay nada que
+      # desplegar, y el error tiene que decir exactamente eso.
+      - name: Comprobar que existe livekit.dev.toml
+        run: |
+          if [ ! -f livekit.dev.toml ]; then
+            echo "::error::Falta livekit-agent/livekit.dev.toml. Lo genera 'lk agent create' contra el agente de dev (una vez, en local, con credenciales reales). Commitéalo antes de que este workflow pueda desplegar."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: livekit-agent/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Tests offline
+        run: npm run test:offline
+
+      - name: Instalar el CLI de Doppler
+        uses: dopplerhq/cli-action@v3
+
+      - name: Instalar el CLI de LiveKit
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          VERSION="${LK_VERSION:-}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(curl -fsSL https://api.github.com/repos/livekit/livekit-cli/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Versión de CLI inválida: '$VERSION'"; exit 1; }
+          ARCHIVE="lk_${VERSION}_linux_amd64.tar.gz"
+          BASE="https://github.com/livekit/livekit-cli/releases/download/v${VERSION}"
+          curl -fsSL "$BASE/$ARCHIVE" -o "$ARCHIVE"
+          curl -fsSL "$BASE/checksums.txt" -o checksums.txt
+          expected=$(awk -v f="$ARCHIVE" '$2 == f {print $1}' checksums.txt)
+          [ -n "$expected" ] || { echo "::error::Sin checksum para $ARCHIVE"; exit 1; }
+          [ "$expected" = "$(sha256sum "$ARCHIVE" | awk '{print $1}')" ] || { echo "::error::Checksum no coincide para $ARCHIVE"; exit 1; }
+          tar xzf "$ARCHIVE"
+          sudo mv lk /usr/local/bin/lk
+          lk --version
+
+      - name: Comprobar acceso a Doppler y al agente
+        run: |
+          set -euo pipefail
+          if [ -z "${DOPPLER_TOKEN:-}" ]; then
+            echo "::error::Falta el secret DOPPLER_TOKEN_STG en el repositorio."
+            exit 1
+          fi
+          for var in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_AGENT_NAME TELNYX_API_KEY ATTIO_API_KEY; do
+            if ! doppler secrets get "$var" --token "$DOPPLER_TOKEN" --plain > /dev/null 2>&1; then
+              echo "::error::El config de Doppler de dev no tiene $var."
+              exit 1
+            fi
+          done
+          doppler run --token "$DOPPLER_TOKEN" -- lk agent status --config "$LK_CONFIG" --json > /dev/null
+
+      - name: Desplegar y esperar al rollout
+        run: doppler run --token "$DOPPLER_TOKEN" -- npm run deploy:only
+
+  deploy-prod:
+    name: Desplegar a LiveKit Cloud (producción)
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
+    runs-on: ubuntu-latest
+    # Environment con reviewer obligatorio: el job espera aprobación antes de
+    # tocar producción. El agente llama a leads reales — un merge no debería
+    # cambiar lo que oyen sin que alguien lo apruebe.
+    environment: production
+    defaults:
+      run:
+        working-directory: livekit-agent
+    # Nunca se cancela un deploy a medias: si entra otro, espera. Cancelar en
+    # mitad de un rollout es justo cómo se acaba con una versión indeterminada.
+    concurrency:
+      group: deploy-agente-livekit-prod
+      cancel-in-progress: false
+    env:
+      # Único secreto en GitHub: el token de Doppler, que ya lleva dentro a qué
+      # proyecto/config apunta. Todo lo demás (credenciales de LiveKit, Telnyx,
+      # Attio) sale de Doppler en tiempo de ejecución — misma convención que
+      # en otros workflows propios.
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+      LK_CONFIG: livekit.toml
+      # Opcional: congela la versión del CLI (ej. "2.16.7"). Vacío = última
+      # release. En ambos casos se verifica el checksum de la descarga.
+      LK_VERSION: ${{ vars.LK_VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: livekit-agent/package-lock.json
+
+      - run: npm ci
+
+      # Mismas comprobaciones que en el PR: no se despliega algo que no compila
+      # o que rompe las guardas de configuración.
+      - name: Build
+        run: npm run build
+
+      - name: Tests offline
+        run: npm run test:offline
+
+      - name: Instalar el CLI de Doppler
+        uses: dopplerhq/cli-action@v3
+
+      - name: Instalar el CLI de LiveKit
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          VERSION="${LK_VERSION:-}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(curl -fsSL https://api.github.com/repos/livekit/livekit-cli/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Versión de CLI inválida: '$VERSION'"; exit 1; }
+          ARCHIVE="lk_${VERSION}_linux_amd64.tar.gz"
+          BASE="https://github.com/livekit/livekit-cli/releases/download/v${VERSION}"
+          curl -fsSL "$BASE/$ARCHIVE" -o "$ARCHIVE"
+          curl -fsSL "$BASE/checksums.txt" -o checksums.txt
+          expected=$(awk -v f="$ARCHIVE" '$2 == f {print $1}' checksums.txt)
+          [ -n "$expected" ] || { echo "::error::Sin checksum para $ARCHIVE"; exit 1; }
+          [ "$expected" = "$(sha256sum "$ARCHIVE" | awk '{print $1}')" ] || { echo "::error::Checksum no coincide para $ARCHIVE"; exit 1; }
+          tar xzf "$ARCHIVE"
+          sudo mv lk /usr/local/bin/lk
+          lk --version
+
+      - name: Comprobar acceso a Doppler y al agente
+        # Falla rápido y barato: si el token de Doppler o las credenciales de
+        # LiveKit no están bien, mejor saberlo aquí que a mitad de un build de
+        # varios minutos. Se comprueba que los secretos EXISTEN sin imprimirlos.
+        run: |
+          set -euo pipefail
+          if [ -z "${DOPPLER_TOKEN:-}" ]; then
+            echo "::error::Falta el secret DOPPLER_TOKEN en el repositorio."
+            exit 1
+          fi
+          for var in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET TELNYX_API_KEY ATTIO_API_KEY; do
+            if ! doppler secrets get "$var" --token "$DOPPLER_TOKEN" --plain > /dev/null 2>&1; then
+              echo "::error::El config de Doppler al que apunta DOPPLER_TOKEN no tiene $var."
+              exit 1
+            fi
+          done
+          doppler run --token "$DOPPLER_TOKEN" -- lk agent status --config "$LK_CONFIG" --json > /dev/null
+
+      - name: Desplegar y esperar al rollout
+        # `doppler run` inyecta el config entero en el proceso; scripts/deploy.sh
+        # decide qué subset viaja a LiveKit como secretos del agente (lista
+        # explícita AGENT_SECRET_VARS, no todo lo que haya en el entorno).
+        run: doppler run --token "$DOPPLER_TOKEN" -- npm run deploy:only
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "### Deploy del agente de voz (producción)"
+            echo
+            echo "- Commit: \`${GITHUB_SHA::7}\`"
+            echo "- Resultado del job: **${{ job.status }}**"
+            echo
+            echo '```'
+            doppler run --token "$DOPPLER_TOKEN" -- lk agent status --config "$LK_CONFIG" 2>&1 || echo "(no se pudo leer el estado)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

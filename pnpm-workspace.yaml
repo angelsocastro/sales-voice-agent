@@ -1,0 +1,9 @@
+# Cada paquete (raíz, livekit-agent, sdr-console) sigue siendo standalone
+# con su propio package-lock.json de npm — eso es lo que usa el CI/deploy
+# (ver .github/workflows/ci.yml, deploy-agent.yml: `npm ci` dentro de cada
+# carpeta) y no se toca. Este workspace es solo para desarrollo local: un
+# único `pnpm install` en la raíz instala los tres a la vez, en vez de tener
+# que entrar carpeta por carpeta.
+packages:
+  - livekit-agent
+  - sdr-console

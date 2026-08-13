@@ -1,0 +1,30 @@
+{
+  "name": "sales-voice-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "dev:all": "concurrently -n server,agent,dashboard -c blue,magenta,green \"pnpm run dev\" \"pnpm -C livekit-agent run dev\" \"pnpm -C sdr-console run dev\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dial": "tsx src/dialer/dial-script.ts",
+    "call": "tsx --env-file=.env scripts/call.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.2.0",
+    "hono": "^4.6.0",
+    "livekit-server-sdk": "^2.17.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
