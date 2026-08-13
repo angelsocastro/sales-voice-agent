@@ -1,0 +1,57 @@
+node_modules/
+dist/
+.next/
+*.local
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+
+# Datos de leads/contactos reales — nunca se commitean, se pasan como
+# argumento local. Un CSV de leads reales se filtró en el pasado en otro
+# repo; esto evita que vuelva a pasar aquí.
+*.csv
+
+# Config real de LiveKit Cloud (subdominio + agent ID de tu proyecto) —
+# genera la tuya con `lk agent create` a partir de livekit.toml.example.
+livekit-agent/livekit.toml
+livekit-agent/livekit.dev.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# DB / local state
+*.sqlite
+*.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp

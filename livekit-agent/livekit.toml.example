@@ -1,0 +1,11 @@
+# Generado por `lk agent create` (auth interactiva contra tu propio proyecto
+# de LiveKit Cloud) — copia esto a livekit.toml con tus valores reales y
+# commitéalo ahí (scripts/deploy.sh lo necesita para saber a qué agente
+# desplegar). No compartas tu livekit.toml real en un repo público: revela
+# el subdominio y agent ID de tu proyecto de LiveKit Cloud.
+
+[project]
+  subdomain = "tu-subdominio-livekit"
+
+[agent]
+  id = "CA_xxxxxxxxxxxx"

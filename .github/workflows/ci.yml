@@ -1,0 +1,83 @@
+name: CI — agente de voz
+
+# Solo corre cuando se toca el agente: el dialer, el CRM y los docs del repo
+# raíz tienen su propio ciclo y no dependen de esto.
+on:
+  pull_request:
+    paths:
+      - 'livekit-agent/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+    inputs:
+      judge_tests:
+        description: 'Correr también los tests de conversación con judge (consumen LLM y necesitan secrets)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-agente-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build + tests offline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: livekit-agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: livekit-agent/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck y build
+        run: npm run build
+
+      # Tests que no necesitan credenciales: config de turnos (la guarda contra
+      # volver a escribir los delays en segundos), CRM y veredicto de rollout.
+      - name: Tests offline
+        run: npm run test:offline
+
+  judge-tests:
+    name: Tests de conversación (judge)
+    # Cuestan llamadas de LLM en cada ejecución, así que van a petición y no en
+    # cada push. Necesitan credenciales de LiveKit Inference y de Telnyx.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.judge_tests }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: livekit-agent
+    env:
+      # Las credenciales salen de Doppler, como en otro proyecto propio. En
+      # GitHub solo vive el token.
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: livekit-agent/package-lock.json
+
+      - run: npm ci
+
+      - name: Instalar el CLI de Doppler
+        uses: dopplerhq/cli-action@v3
+
+      - name: Comprobar acceso a Doppler
+        run: |
+          if [ -z "${DOPPLER_TOKEN:-}" ]; then
+            echo "::error::Falta el secret DOPPLER_TOKEN — estos tests no pueden correr sin él."
+            exit 1
+          fi
+
+      # Los tests levantan sesiones reales contra LiveKit Inference y Telnyx:
+      # necesitan el config entero, no una lista de variables.
+      - run: doppler run --token "$DOPPLER_TOKEN" -- npm test
